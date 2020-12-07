@@ -45,22 +45,24 @@ class ReplayMemory(object):
 class QNet(nn.Module):
     # N is batch size; D_in is input dimension;
     # H is hidden dimension; D_out is output dimension.
-    N, D_in, H, D_out = 64, 1000, 256, 10
+    N, D_in, H, D_out = 128, 1000, 256, 10
 
     def __init__(self):
         super(QNet, self).__init__()
         # VOTRE CODE
         ############
         # Définition d'un réseau avec une couche cachée (à 256 neurones par exemple)
-        self.linear1 = torch.nn.Linear(D_in, H)
-        self.linear2 = torch.nn.Linear(H, D_out)
+        self.linear1 = nn.Linear(D_in, H)
+        self.linear2 = nn.Linear(H, D_out)
         
     def forward(self, x):
         # VOTRE CODE
         ############
         # Calcul de la passe avant :
         # Fonction d'activation relu pour la couche cachée
+        x = F.relu(self.linear1(x))
         # Fonction d'activation linéaire sur la couche de sortie
+        x = self.linear2(x)
 
         return x
 
