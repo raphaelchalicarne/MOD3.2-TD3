@@ -51,6 +51,7 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         # VOTRE CODE
         ############
+        N, D_in, H, D_out = 128, 4, 256, 4
         # Définition d'un réseau avec une couche cachée (à 256 neurones par exemple)
         self.linear1 = nn.Linear(D_in, H)
         self.linear2 = nn.Linear(H, D_out)
@@ -100,10 +101,18 @@ class Agent:
             # VOTRE CODE
             ############
             # Calcul et renvoi de l'action fournie par le réseau
+            # action = np.argmax(self.policy_net(state))
+            action = self.policy_net(state)
+            print("state", state)
+            print("self.policy_net", self.policy_net)
         else:
             # VOTRE CODE
             ############
             # Calcul et renvoi d'une action choisie aléatoirement
+            # action = env.step(env.action_space.sample())
+            action = torch.tensor([[random.randrange(self.n_actions)]], device=device, dtype=torch.long)
+        print("action", action)
+        return action
 
     def process_state(self,state):
         return torch.from_numpy(state).unsqueeze(0).float().to(device)
@@ -173,6 +182,9 @@ class Agent:
 
                 action = self.select_action(self.process_state(state))
                 next_state, reward, done, _ = self.env.step(action.item())
+                print("next_state", next_state)
+                print("reward", reward)
+                print("done", done)
                 reward = torch.tensor([reward], device=device)
 
                 if done:
