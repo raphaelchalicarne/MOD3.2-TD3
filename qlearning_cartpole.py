@@ -43,17 +43,17 @@ class ReplayMemory(object):
         return len(self.memory)
 
 class QNet(nn.Module):
-    # N is batch size; D_in is input dimension;
+    # D_in is input dimension;
     # H is hidden dimension; D_out is output dimension.
-    N, D_in, H, D_out = 128, 1000, 256, 10
+    D_in, H, D_out = 4, 256, 2
 
     def __init__(self):
         super(QNet, self).__init__()
         # VOTRE CODE
         ############
         # Définition d'un réseau avec une couche cachée (à 256 neurones par exemple)
-        self.linear1 = nn.Linear(D_in, H)
-        self.linear2 = nn.Linear(H, D_out)
+        self.linear1 = nn.Linear(self.D_in, self.H)
+        self.linear2 = nn.Linear(self.H, self.D_out)
         
     def forward(self, x):
         # VOTRE CODE
@@ -100,10 +100,13 @@ class Agent:
             # VOTRE CODE
             ############
             # Calcul et renvoi de l'action fournie par le réseau
+            with torch.no_grad():
+                return self.policy_net(state).max(1)[1].view(1, 1) #je suis pas sur de ça
         else:
             # VOTRE CODE
             ############
             # Calcul et renvoi d'une action choisie aléatoirement
+            return torch.tensor([[random.randrange(self.n_actions)]], device=device)
 
     def process_state(self,state):
         return torch.from_numpy(state).unsqueeze(0).float().to(device)
@@ -135,8 +138,11 @@ class Agent:
         batch = Transition(*zip(*transitions))
 
 
+#        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+#                                              batch.next_state)), device=device, dtype=torch.uint8)
+#       J'ai changé cette ligne car c'est conseillé par pytorch
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                              batch.next_state)), device=device, dtype=torch.uint8)
+                                              batch.next_state)), device=device, dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
                                                     if s is not None])
         state_batch = torch.cat(batch.state)
@@ -146,22 +152,32 @@ class Agent:
         # VOTRE CODE
         ############
         # Calcul de Q(s_t,a) : Q pour l'état courant
-
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        
         # VOTRE CODE
         ############
         # Calcul de Q pour l'état suivant
-
+        next_state_values = torch.zeros(self.batch_size, device=device)
+        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+        
         # VOTRE CODE
         ############
         # Calcul de Q future attendue cumulée
-
+        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+        
         # VOTRE CODE
         ############
         # Calcul de la fonction de perte de Huber
+        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
         # VOTRE CODE
         ############
         # Optimisation du modèle
+        self.optimizer.zero_grad()
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
 
     def train_policy_model(self):
 
@@ -218,7 +234,17 @@ class Agent:
                 ############
                 # Sélection d'une action appliquée à l'environnement
                 # et mise à jour de l'état
+                action = self.select_action(self.process_state(state))
+                next_state, reward, done, _ = self.env.step(action.item())
+                reward = torch.tensor([reward], device=device)
 
+                if done:
+                    next_state = None
+
+                self.memory.push(self.process_state(state), action, self.process_state(next_state) if not next_state is None else None, reward)
+
+                state = next_state
+                
         print('Testing completed')
 
 if __name__ == '__main__':
