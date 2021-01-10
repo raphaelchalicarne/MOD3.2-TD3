@@ -49,20 +49,40 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         # VOTRE CODE
         ############
+        def conv2d_size_out(size, kernel_size = 5, stride = 2):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
         # Définition du réseau. Exemple :
         # 3 couches de convolution chacune suivie d'une batch normalization
         # filtres de taille 5 pixels, pas de 2
         # 16 filtres pour la première couche
+        self.conv1 = nn.Conv2d(num_frames, 16, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(16)
         # 32 filtres pour la deuxième
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(32)
         # 64 pour la troisième
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
+        self.bn3 = nn.BatchNorm2d(64)
         # Finir par une couche fully connected
+        # Calcul du nombre d'entrée, puisqu'il y a trois couches successives de convolution
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
+#        conv_frames = conv2d_size_out(conv2d_size_out(conv2d_size_out(num_frames)))
+        linear_input_size = convw * convh * 64
+        self.linear1 = nn.Linear(linear_input_size, num_outputs)
 
     def forward(self, x):
         # VOTRE CODE
         ############
         # Calcul de la passe avant :
         # Fonction d'activation relu pour les couches cachées
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
         # Fonction d'activation linéaire sur la couche de sortie
+#        x = self.linear1(x)
+        x = self.linear1(x.view(x.size(0), -1))
+        return x
 
 class Agent:
     def __init__(self,env):
@@ -104,10 +124,13 @@ class Agent:
             # VOTRE CODE
             ############
             # Calcul et renvoi de l'action fournie par le réseau
+            with torch.no_grad():
+                return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             # VOTRE CODE
             ############
             # Calcul et renvoi d'une action choisie aléatoirement
+            return torch.tensor([[random.randrange(self.n_actions)]], device=device)
 
     def plot_durations(self):
         plt.figure(2)
@@ -141,8 +164,11 @@ class Agent:
         batch = Transition(*zip(*transitions))
 
 
+#        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+#                                              batch.next_state)), device=device, dtype=torch.uint8)
+#       J'ai changé cette ligne car c'est conseillé par pytorch
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                              batch.next_state)), device=device, dtype=torch.uint8)
+                                              batch.next_state)), device=device, dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
                                                     if s is not None])
         state_batch = torch.cat(batch.state)
@@ -152,22 +178,32 @@ class Agent:
         # VOTRE CODE
         ############
         # Calcul de Q(s_t,a) : Q pour l'état courant
-
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)    
+        
         # VOTRE CODE
         ############
         # Calcul de Q pour l'état suivant
+        next_state_values = torch.zeros(self.batch_size, device=device)
+        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
 
         # VOTRE CODE
         ############
         # Calcul de Q future attendue cumulée
+        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         # VOTRE CODE
         ############
         # Calcul de la fonction de perte de Huber
+        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
         # VOTRE CODE
         ############
         # Optimisation du modèle
+        self.optimizer.zero_grad()
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
 
     def train_policy_model(self):
 
@@ -240,6 +276,33 @@ class Agent:
                 ############
                 # Sélection d'une action appliquée à l'environnement
                 # et mise à jour de l'état
+                while state.size()[1] < self.num_frames:
+                        action = 1 # Fire
+
+                        new_frame, reward, done, _ = env.step(action)
+                        new_frame = self.process(new_frame)
+
+                        state = torch.cat([state, new_frame], 1)
+
+#                action = self.select_action(state)
+                self.steps_done += 1
+                with torch.no_grad():
+                    action = self.policy_net(state).max(1)[1].view(1, 1)
+                
+                new_frame, reward, done, _ = self.env.step(action.item())
+                new_frame = self.process(new_frame)
+
+                if done:
+                    new_state = None
+                else :
+                    new_state = torch.cat([state, new_frame], 1)
+                    new_state = new_state[:, 1:, :, :]
+
+                state = new_state
+
+                if done:
+                    break
+
 
         print('Testing completed')
 
@@ -258,7 +321,7 @@ if __name__ == '__main__':
     agent = Agent(env)
 
     # Training phase
-    agent.train_policy_model()
+#    agent.train_policy_model()
 
     #Testing phase
     agent.load_model()

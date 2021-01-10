@@ -101,7 +101,7 @@ class Agent:
             ############
             # Calcul et renvoi de l'action fournie par le réseau
             with torch.no_grad():
-                return self.policy_net(state).max(1)[1].view(1, 1) #je suis pas sur de ça
+                return self.policy_net(state).max(1)[1].view(1, 1)
         else:
             # VOTRE CODE
             ############
@@ -200,14 +200,18 @@ class Agent:
 
                 self.optimize_model()
 
-                if done:
+                if done or t == 3000: # ajout d'une condition pour diminuer le temps d'apprentissage
                     self.episode_durations.append(t + 1)
                     self.plot_durations()
                     break
-
+            
             if i_episode % self.target_update == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
                 self.save_model()
+                
+            # ajout d'une condition pour diminuer le temps d'apprentissage
+            if t == 3000:
+                break
 
         self.save_model()
         print('Training completed')
@@ -234,14 +238,14 @@ class Agent:
                 ############
                 # Sélection d'une action appliquée à l'environnement
                 # et mise à jour de l'état
-                action = self.select_action(self.process_state(state))
+#                action = self.select_action(self.process_state(state))
+                self.steps_done += 1
+                with torch.no_grad():
+                    action = self.policy_net(self.process_state(state)).max(1)[1].view(1, 1) 
                 next_state, reward, done, _ = self.env.step(action.item())
-                reward = torch.tensor([reward], device=device)
-
+                
                 if done:
                     next_state = None
-
-                self.memory.push(self.process_state(state), action, self.process_state(next_state) if not next_state is None else None, reward)
 
                 state = next_state
                 
@@ -262,7 +266,7 @@ if __name__ == '__main__':
     agent = Agent(env)
 
     # Training phase
-    agent.train_policy_model()
+#    agent.train_policy_model()
 
     #Testing phase
     agent.load_model()
